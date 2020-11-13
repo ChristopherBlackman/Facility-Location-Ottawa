@@ -16,7 +16,10 @@ def main():
 
     pprint(point_set_x)
     print("Cal. Intersections")
-    point_intersections(pre_data,point_set_x,point_set_y)
+    #point_intersections(pre_data,point_set_x,point_set_y)
+
+    print("Seg. Intersections")
+    segment_intersections(pre_data,point_set_x,point_set_y)
 
 def to_points(pre_data):
     tmp_x = []
@@ -48,7 +51,43 @@ def point_intersections(pre_data,point_set_x,point_set_y):
                         
 
 def segment_intersections(pre_data,point_set_x,point_set_y):
+    for road in pre_data:
+        start = road['coordinates'][0]
+        end = road['coordinates'][-1]
+        print(start)
+        print(end)
     pass
+
+
+# 2d only
+# A is from t1 to point
+# B is from t1 to t2
+# returns the projection in terms of how much it is scaled by B
+from numpy import linalg as la
+def cal_projections(A,B):
+    t = np.apply_along_axis(la.norm,1,B)
+    return np.einsum('ij, ij->i',A,(B/t.reshape((t.shape[0],1))))/t
+
+# returns the othogonal length of p to segment
+# t1 is segment endpoint
+# t2 is segment endpoint
+# p  is point we are calculating orthogonal distance
+def cal_length(t1,t2,p):
+    l = cal_projections(t1-p,t1-t2)
+    f = np.vectorize(lambda_condition)
+    l = f(l)
+    
+    pp = t1*(1-l.reshape((l.shape[0],1))) + t2*(l.reshape((l.shape[0],1)))
+    
+    return np.apply_along_axis(la.norm,1,pp-p)
+
+# checks if line hits segment
+# return x if in range
+# return inf if out of range
+def lambda_condition(x):
+    if x < 0.0 or x > 1.0:
+        return np.inf
+    return x
 
 
 # Credit : Jaime
