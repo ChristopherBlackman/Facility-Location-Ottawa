@@ -1,8 +1,10 @@
 import re
 import numpy as np
+from numpy import linalg as la
 import itertools as it
 from pprint import pprint
 from sklearn.neighbors import NearestNeighbors
+import multiprocessing
 KML_ROAD_FILE = "./data/Road_Centrelines.kml"
 
 
@@ -12,14 +14,14 @@ def main():
     print("Data Extracted")
 
     print("Converting To PointSet")
-    point_set_x, point_set_y = to_points(pre_data)
+    point_set_x, point_set_y, edge_set_x, edge_set_y = to_points(pre_data)
 
-    pprint(point_set_x)
+
     print("Cal. Intersections")
     #point_intersections(pre_data,point_set_x,point_set_y)
 
     print("Seg. Intersections")
-    segment_intersections(pre_data,point_set_x,point_set_y)
+    segment_intersections(pre_data,edge_set_x,edge_set_y)
 
 def to_points(pre_data):
     tmp_x = []
@@ -29,7 +31,16 @@ def to_points(pre_data):
         for point in road['coordinates']:
             tmp_x.append(point)
             tmp_y.append(road['object_id'])
-    return (np.array(tmp_x),np.array(tmp_y))
+
+
+    edge = []
+    edge_id = []
+    for i in range(len(tmp_x)-1):
+        if tmp_y[i] == tmp_y[i+1]:
+            edge.append([tmp_x[i],tmp_x[i+1]])
+            edge_id.append(tmp_y[i])
+
+    return (np.array(tmp_x),np.array(tmp_y),np.array(edge),np.array(edge_id))
 
 # get the 10 NN of a point
 # assumptions : use Euclidian Distance for NN calculation, but test with spherical (curvature is almost plane like)
@@ -46,24 +57,47 @@ def point_intersections(pre_data,point_set_x,point_set_y):
             for point, nn in zip(road['coordinates'],Y):
                 for index in nn:
                     if (spherical_dist(point,point_set_x[index]) < 10 and  not road['object_id'] == point_set_y[index]):
-                        print(spherical_dist(point,point_set_x[index]))
-                        print(road['object_id'], point_set_y[index])
-                        
+                        #print(spherical_dist(point,point_set_x[index]))
+                        #print(road['object_id'], point_set_y[index])
+                        pass
+               
 
-def segment_intersections(pre_data,point_set_x,point_set_y):
+#def split(a, n):
+    #k, m = divmod(len(a), n)
+    #return (a[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n))
+
+
+def segment_intersections(pre_data,edge_set_x,edge_set_y,p=1):
+    i = 0
+    t1 = edge_set_x[:,0,:]
+    t2 = edge_set_x[:,1,:]
+
+    neigh = NearestNeighbors(n_neighbors=10, radius=0.0000000000001) 
+    neigh.fit(point_set_x)
+    
+    #p = Pool(6)
+    #p.map(h_cal_road,zip(pre_data,t1,t2))
+
+    #with multiprocessing.Pool(processes=p) as pool:
+    '''
     for road in pre_data:
+        h_cal_road(road,t1,t2)
+        i = i + 1
+        print(i)
+        '''
+
+def h_cal_road(road,t1,t2):
         start = road['coordinates'][0]
         end = road['coordinates'][-1]
-        print(start)
-        print(end)
-    pass
+
+        cal_length(t1,t2,start)
+        cal_length(t1,t2,end)
 
 
 # 2d only
 # A is from t1 to point
 # B is from t1 to t2
 # returns the projection in terms of how much it is scaled by B
-from numpy import linalg as la
 def cal_projections(A,B):
     t = np.apply_along_axis(la.norm,1,B)
     return np.einsum('ij, ij->i',A,(B/t.reshape((t.shape[0],1))))/t
@@ -72,6 +106,12 @@ def cal_projections(A,B):
 # t1 is segment endpoint
 # t2 is segment endpoint
 # p  is point we are calculating orthogonal distance
+#      p
+#     /|
+#    / |
+#   /  | <-- length returned
+#  /   |
+#t1-----t2
 def cal_length(t1,t2,p):
     l = cal_projections(t1-p,t1-t2)
     f = np.vectorize(lambda_condition)
