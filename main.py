@@ -6,22 +6,74 @@ from pprint import pprint
 from sklearn.neighbors import NearestNeighbors
 import multiprocessing
 KML_ROAD_FILE = "./data/Road_Centrelines.kml"
+DOT_FILE = "./data/test.dot"
 
 
 def main():
-    print("Extracting Data")
-    pre_data = organize_data()
-    print("Data Extracted")
+    #print("Extracting Data")
+    #pre_data = organize_data()
+    #print("Data Extracted")
 
-    print("Converting To PointSet")
-    point_set_x, point_set_y, edge_set_x, edge_set_y = to_points(pre_data)
+    #print("Converting To PointSet")
+    #point_set_x, point_set_y, edge_set_x, edge_set_y = to_points(pre_data)
 
 
-    print("Cal. Intersections")
+    #print("Cal. Intersections")
     #point_intersections(pre_data,point_set_x,point_set_y)
 
-    print("Seg. Intersections")
-    segment_intersections(pre_data,edge_set_x,edge_set_y)
+    #print("Seg. Intersections")
+    #segment_intersections(pre_data,edge_set_x,edge_set_y)
+
+    test_set()
+
+def test_set():
+    print("Extracting data from : ",DOT_FILE)
+    vertex_set, edge_set = dot_extract()
+
+def dot_extract(norm=np.linalg.norm):
+    with open(DOT_FILE,'rt',encoding='utf-8') as f:
+        vertex = re.compile("\w+\s\[pos=\"\d+,\d+\"\];")
+        edge = re.compile("\w+\s--\s\w+;")
+        
+        vertex_dict = {}
+        edge_dict = {}
+
+        for line in f.readlines():
+            l = line.strip()
+            if vertex.search(l):
+                pos = [ float(i) for i in re.findall("\d+",l)]
+                v = re.findall("\A\w+",l)
+                vertex_dict[v[0]] = np.array(pos)
+            if edge.search(l):
+                e = re.findall("\w+",l)
+                if edge_dict.get(e[0],None) is None:
+                    edge_dict[e[0]] = {}
+                edge_dict[e[0]][e[1]] = 0
+                if edge_dict.get(e[1],None) is None:
+                    edge_dict[e[1]] = {}
+                edge_dict[e[1]][e[0]] = 0
+
+                    
+
+        for v1, v_to in edge_dict.items():
+            for v2 in v_to:
+                dist = norm(vertex_dict[v1]-vertex_dict[v2]) 
+                edge_dict[v1][v2] = dist
+    return vertex_dict, edge_dict
+
+class KMeans:
+    def __init__(self,n_clusters=2, random_state=0,n_init=10,max_iter=300)
+        self.n_clusters = n_clusters
+        self.random_state = random_state
+        self.n_init = n_init
+        self.max_iter = max_iter
+
+    # compute k-means, and find clusters
+    # V : Vertex Set -> Pos : [x,y]
+    # E : Edge Set -> Weights : float
+    def fit(V,E):
+        # clamp two random verticies as centers
+        
 
 def to_points(pre_data):
     tmp_x = []
