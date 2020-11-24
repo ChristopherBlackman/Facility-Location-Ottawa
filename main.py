@@ -1,10 +1,17 @@
 import re
+import random
+
+import itertools as it
+
 import numpy as np
 from numpy import linalg as la
-import itertools as it
+
 from pprint import pprint
+
 from sklearn.neighbors import NearestNeighbors
-import multiprocessing
+
+from dijkstar import Graph, find_path
+
 KML_ROAD_FILE = "./data/Road_Centrelines.kml"
 DOT_FILE = "./data/test.dot"
 
@@ -29,6 +36,8 @@ def main():
 def test_set():
     print("Extracting data from : ",DOT_FILE)
     vertex_set, edge_set = dot_extract()
+    model = KMeans()
+    print(model.fit(vertex_set,edge_set))
 
 def dot_extract(norm=np.linalg.norm):
     with open(DOT_FILE,'rt',encoding='utf-8') as f:
@@ -61,8 +70,15 @@ def dot_extract(norm=np.linalg.norm):
                 edge_dict[v1][v2] = dist
     return vertex_dict, edge_dict
 
+
+def adj_list_to_graph(E):
+    graph = Graph()
+    for v1, v_to in E.items():
+        for v2 in v_to:
+            graph.add_edge(v1,v2,E[v1][v2])
+    return graph
 class KMeans:
-    def __init__(self,n_clusters=2, random_state=0,n_init=10,max_iter=300)
+    def __init__(self,n_clusters=2, random_state=0,n_init=10,max_iter=300):
         self.n_clusters = n_clusters
         self.random_state = random_state
         self.n_init = n_init
@@ -71,8 +87,65 @@ class KMeans:
     # compute k-means, and find clusters
     # V : Vertex Set -> Pos : [x,y]
     # E : Edge Set -> Weights : float
-    def fit(V,E):
+    def fit(self,V,E):
         # clamp two random verticies as centers
+        centroids_iter = []
+        measure_iter = []
+        graph = adj_list_to_graph(E)
+
+        # will return index of items
+        verticies_pos = list(V.keys())
+        neigh = NearestNeighbors(n_neighbors=1, radius=0.0000000000001) 
+        neigh.fit(np.array(list(V.values())))
+
+
+        # number of iterations
+        for iteration in range(self.n_init):
+            centroids = random.choices(list(V.keys()),k=self.n_clusters)
+            measure_i = np.zeros(self.n_clusters)
+
+
+
+            # computing clusters 
+            for _ in range(self.max_iter):
+                centroid_pos = np.zeros((self.n_clusters,2))
+                centroid_count = np.zeros(self.n_clusters)
+                measure_k = np.zeros(self.n_clusters)
+
+                for v in list(V.keys()):
+                    minimum_cost = float('inf')
+                    minimum_c_index = 0
+
+                    for index, centroid in zip(range(len(centroids)),centroids):
+                        cost = find_path(graph,v,centroid).total_cost
+                        if cost < minimum_cost:
+                            minimum_cost = cost
+                            minimum_c_index = index
+
+
+                    centroid_pos[minimum_c_index] = centroid_pos[minimum_c_index] + V[v]
+                    centroid_count[minimum_c_index] = centroid_count[minimum_c_index] + 1
+                    measure_k[minimum_c_index] = measure_k[minimum_c_index] + minimum_cost
+
+                centroid_count = np.array([1 if a == 0 else a for a in centroid_count])
+                centroid_pos = centroid_pos/centroid_count[:,np.newaxis]
+                Y = neigh.kneighbors(centroid_pos,1,return_distance=False)
+
+                centroids = [verticies_pos[i[0]] for i in Y]
+                
+                # if there is next to no change from previous iteration
+                if la.norm(measure_i-measure_k) < 1.0:
+                    measure_i = measure_k
+                    break
+                measure_i = measure_k
+                
+            measure_iter.append(measure_i)
+            centroids_iter.append(centroids)
+
+        return centroids_iter[np.argmin(np.sum(measure_iter,axis=1))]
+
+
+
         
 
 def to_points(pre_data):
