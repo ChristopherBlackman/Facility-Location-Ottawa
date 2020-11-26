@@ -9,6 +9,7 @@ from numpy import linalg as la
 from pprint import pprint
 
 from sklearn.neighbors import NearestNeighbors
+from scipy.spatial import Voronoi
 
 from dijkstar import Graph, find_path
 
@@ -38,6 +39,9 @@ def test_set():
     vertex_set, edge_set = dot_extract()
     model = KMeans()
     print(model.fit(vertex_set,edge_set))
+
+    model_2 = VoronoiFacilitySelection()
+    print(model_2.fit(vertex_set,edge_set))
 
 def dot_extract(norm=np.linalg.norm):
     with open(DOT_FILE,'rt',encoding='utf-8') as f:
@@ -77,6 +81,67 @@ def adj_list_to_graph(E):
         for v2 in v_to:
             graph.add_edge(v1,v2,E[v1][v2])
     return graph
+
+class VoronoiFacilitySelection:
+    def __init__(self,random_state=42,threshold=1,max_iter=300,n_cells=3):
+        self.random_state = random_state
+        self.threshold = threshold
+        self.max_iter = max_iter
+        self.n_cells = n_cells
+
+    # Voronoi Construction On 2 Points
+    def Voronoi_2_points(self):
+        pass
+
+    # the largest circle inside a voronoi cell 
+    def objective_function(self):
+        pass
+
+    def fit(self,V,E,density=None):
+        random.seed(self.random_state)
+
+        # pick random points
+        centroids = random.choices(list(V.keys()),k=self.n_cells)
+
+        print(centroids)
+
+        cell_pos = np.array([V[centroid] for centroid in centroids])
+
+        print(cell_pos)
+
+        # compute V.D of points
+
+        vor = Voronoi(cell_pos)
+
+        pprint(vor)
+        pprint(vor.vertices)
+        pprint(vor.regions)
+        pprint(vor.ridge_vertices)
+        pprint(vor.ridge_points)
+
+        return vor
+
+        # compute Objective Function
+
+
+        # loop
+
+            # Calculate density of cells
+
+            # calculate partial derivatives
+
+            # calculate new cell positions
+
+            # compute V.D of points
+
+            # compare objective functions
+
+        # return voronoi Cell Locations
+        
+
+        pass
+
+
 class KMeans:
     def __init__(self,n_clusters=2, random_state=0,n_init=10,max_iter=300):
         self.n_clusters = n_clusters
