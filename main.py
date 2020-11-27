@@ -96,6 +96,8 @@ class VoronoiFacilitySelection:
     # the largest circle inside a voronoi cell 
     def objective_function(self,V,E,CH_points,CH_segments,vor):
 
+        #output : delta from center at voronoin point i (maximum radii)
+        distances = np.zeros(vor.points.shape)
             
         print("Objective : Voronoi Centers")
         # compute distances of centers, with voronoi verticies
@@ -107,7 +109,8 @@ class VoronoiFacilitySelection:
             delta_max = delta[np.argmax(np.apply_along_axis(np.linalg.norm,1,delta))]
             
             # check if delta max is bigger than any other distances found thus far for point at index i
-            print(delta_max)
+            if la.norm(distances[i]) < la.norm(delta_max):
+                distances[i] = delta_max
 
 
         print("Objective : Points on city border")
@@ -124,7 +127,8 @@ class VoronoiFacilitySelection:
             delta = CH_p-center
     
             #check if delta is greater than any other delta of center_i
-            print(delta)
+            if la.norm(distances[center_i]) < la.norm(delta):
+                distances[center_i] = delta
 
 
 
@@ -150,6 +154,8 @@ class VoronoiFacilitySelection:
 
 
         for points_index, voronoi_ridge in vor.ridge_dict.items():
+
+
             # find the infnite voronoi ridges
             if voronoi_ridge[np.argmin(voronoi_ridge)] >= 0:
                 continue
@@ -201,14 +207,26 @@ class VoronoiFacilitySelection:
 
                 # ray q intersects segment p at point p + tr (u cannot b zero, else we go backards, t must be btwn segment)
                 if 0 <= t and t <= 1 and u >= 0 and np.cross(r,s) != 0:
+                    # intersection point with outer border, if it exists
+                    intersection_point = p + t*r
+
+                    # centers indicies
+                    point_1 = points_index[0]
+                    point_2 = points_index[1]
+
+                    if la.norm(distances[points_index[0]]) < la.norm(intersection_point - vor.points[points_index[0]]):
+                        distances[points_index[0]] = intersection_point - vor.points[points_index[0]]
+
+                    if la.norm(distances[points_index[1]]) < la.norm(intersection_point - vor.points[points_index[1]]):
+                         distances[points_index[1]] = intersection_point - vor.points[points_index[1]]
+
+
                     
-                    print('p+t*r',p + t*r)
-                
             
 
 
         # return distance, and distance vector associated with voronoi verticies indicies
-        return None
+        return distances
 
     def fit(self,V,E,density=None):
         print("Fit")
@@ -246,6 +264,7 @@ class VoronoiFacilitySelection:
         # compute Objective Function
 
         O = self.objective_function(V,E,CH_points,CH_segments,vor)
+
 
 
         # loop
