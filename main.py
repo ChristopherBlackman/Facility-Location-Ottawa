@@ -94,10 +94,125 @@ class VoronoiFacilitySelection:
         pass
 
     # the largest circle inside a voronoi cell 
-    def objective_function(self):
-        pass
+    def objective_function(self,V,E,CH_points,CH_segments,vor):
+
+            
+        print("Objective : Voronoi Centers")
+        # compute distances of centers, with voronoi verticies
+        for i, point_region in zip(range(len(vor.points)),vor.point_region):
+            vor_v_i = vor.regions[point_region]
+            points = np.array([vor.vertices[p] for p in vor_v_i if p >= 0])
+            center = vor.points[i]
+            delta = points - center
+            delta_max = delta[np.argmax(np.apply_along_axis(np.linalg.norm,1,delta))]
+            
+            # check if delta max is bigger than any other distances found thus far for point at index i
+            print(delta_max)
+
+
+        print("Objective : Points on city border")
+        # compute distance of centers, with C.H, points
+
+        # this section will inside the loop
+        neigh = NearestNeighbors(n_neighbors=1, radius=0.0000000000001) 
+        neigh.fit(vor.points)
+
+        Y = neigh.kneighbors(CH_points,1,return_distance=False) 
+
+        for center_i,CH_p in zip(Y,CH_points):
+            center = vor.points[center_i]
+            delta = CH_p-center
+    
+            #check if delta is greater than any other delta of center_i
+            print(delta)
+
+
+
+
+
+        print("Objective : Edge Intersections on city border")
+
+        # compute distance of centers, with edge intersections
+
+        #rotation matrix 90 deg
+        rot = np.array([[0,-1],[1,0]])
+
+
+        #compute centroid
+        hull = set()
+        for points , voronoi_ridge in vor.ridge_dict.items():
+            if voronoi_ridge[np.argmin(voronoi_ridge)] < 0:
+                hull.add(points[0])
+                hull.add(points[1])
+
+        hull = np.array([vor.points[i] for i in hull])
+        centroid = np.sum(hull,axis=0)/hull.shape[0]
+
+
+        for points_index, voronoi_ridge in vor.ridge_dict.items():
+            # find the infnite voronoi ridges
+            if voronoi_ridge[np.argmin(voronoi_ridge)] >= 0:
+                continue
+
+            p0 = vor.vertices[voronoi_ridge[np.argmax(voronoi_ridge)]]
+            p1 = vor.points[points_index[0]]
+            p2 = vor.points[points_index[1]]
+            
+            #bisector
+            q = (p1 + p2)/2
+            s = (p1-p2)@rot
+
+            t1 = np.sign(np.linalg.det(np.hstack((np.array(([p1,p2,q+s])),np.ones((3,1))))))
+            t2 = np.sign(np.linalg.det(np.hstack((np.array(([p1,p2,centroid])),np.ones((3,1))))))
+            
+            # make sure the the edge is pointing outwards from the convex hull
+            if t1 == t2:
+                s = -s
+                
+            #original math proof from :
+            #https://stackoverflow.com/questions/563198/how-do-you-detect-where-two-line-segments-intersect/565282#565282
+            #
+            #take the idea of line segment intersection
+            # q+ s   p + r
+            # \    /
+            #  \  /
+            #   \/
+            #   /\
+            #  /  \
+            # /    \
+            # p     q
+            #
+            # p + t*r = q + u*s ; where t and u are scalars
+            # (p + t*r)xs = (q + u*s)xs
+            # pxs + t*rxs = qxs + 0
+            # t*rxs = qxs - pxs
+            # t = [(q-p)xs]/rxs
+            # if t is negaive, then we went left of p, thus did not intersect
+            # if |p + tr - p| > |p + r - p| then we have gone past our endpoint c2
+            # note, this is also t|r| > |r| -> t > 1
+            
+            for c1, c2 in CH_segments:
+                p = c1
+                r = c2 - c1
+
+                t = np.cross((q-p),s)/np.cross(r,s)
+                u = np.cross((q-p),r)/np.cross(r,s)
+                
+
+                # ray q intersects segment p at point p + tr (u cannot b zero, else we go backards, t must be btwn segment)
+                if 0 <= t and t <= 1 and u >= 0 and np.cross(r,s) != 0:
+                    
+                    print('p+t*r',p + t*r)
+                
+            
+
+
+        # return distance, and distance vector associated with voronoi verticies indicies
+        return None
 
     def fit(self,V,E,density=None):
+        print("Fit")
+
         random.seed(self.random_state)
 
         # pick random points
@@ -110,18 +225,27 @@ class VoronoiFacilitySelection:
         print(cell_pos)
 
         # compute V.D of points
-
         vor = Voronoi(cell_pos)
 
-        pprint(vor)
-        pprint(vor.vertices)
-        pprint(vor.regions)
-        pprint(vor.ridge_vertices)
-        pprint(vor.ridge_points)
 
-        return vor
+        # this section will be pre-processing
+        min_x = min(np.array(list(V.values()))[:,0])
+        min_y = min(np.array(list(V.values()))[:,1])
+        max_x = max(np.array(list(V.values()))[:,0])
+        max_y = max(np.array(list(V.values()))[:,1])
+
+        min_bound = [min_x,min_y]
+        max_bound = [max_x,max_y]
+
+        # I need to find the minimum, and maximum in the point set
+        CH_points = np.array([min_bound,[max_bound[0],min_bound[1]],max_bound,[min_bound[0],max_bound[1]]])
+        CH_segments = np.array([[CH_points[i-1],CH_points[i]] for i in range(len(CH_points))])
+
+
 
         # compute Objective Function
+
+        O = self.objective_function(V,E,CH_points,CH_segments,vor)
 
 
         # loop
