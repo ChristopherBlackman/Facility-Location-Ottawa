@@ -11,6 +11,7 @@ from pprint import pprint
 from sklearn.neighbors import NearestNeighbors
 from scipy.spatial import Voronoi
 
+
 from dijkstar import Graph, find_path
 
 KML_ROAD_FILE = "./data/Road_Centrelines.kml"
@@ -83,23 +84,24 @@ def adj_list_to_graph(E):
     return graph
 
 class VoronoiFacilitySelection:
-    def __init__(self,random_state=42,threshold=1,max_iter=300,n_cells=3):
+    def __init__(self,random_state=42,threshold=0.01,max_iter=300,n_cells=3,delta=0.1):
         self.random_state = random_state
         self.threshold = threshold
         self.max_iter = max_iter
         self.n_cells = n_cells
+        self.delta = delta
 
     # Voronoi Construction On 2 Points
     def Voronoi_2_points(self):
         pass
 
     # the largest circle inside a voronoi cell 
-    def objective_function(self,V,E,CH_points,CH_segments,vor):
+    def objective_function_distances(self,V,E,CH_points,CH_segments,vor):
 
         #output : delta from center at voronoin point i (maximum radii)
         distances = np.zeros(vor.points.shape)
             
-        print("Objective : Voronoi Centers")
+        #print("Objective : Voronoi Centers")
         # compute distances of centers, with voronoi verticies
         for i, point_region in zip(range(len(vor.points)),vor.point_region):
             vor_v_i = vor.regions[point_region]
@@ -113,7 +115,7 @@ class VoronoiFacilitySelection:
                 distances[i] = delta_max
 
 
-        print("Objective : Points on city border")
+        #print("Objective : Points on city border")
         # compute distance of centers, with C.H, points
 
         # this section will inside the loop
@@ -134,7 +136,7 @@ class VoronoiFacilitySelection:
 
 
 
-        print("Objective : Edge Intersections on city border")
+        #print("Objective : Edge Intersections on city border")
 
         # compute distance of centers, with edge intersections
 
@@ -263,23 +265,50 @@ class VoronoiFacilitySelection:
 
         # compute Objective Function
 
-        O = self.objective_function(V,E,CH_points,CH_segments,vor)
+        O = self.objective_function_distances(V,E,CH_points,CH_segments,vor)
 
 
+
+        # find densities if decide to implement
+
+        lis = []
 
         # loop
+        for i in range(self.max_iter):
 
             # Calculate density of cells
 
             # calculate partial derivatives
+            partial_dervatives_i = np.zeros(vor.points.shape)
+
+            for i,vector in zip(range(O.shape[0]),O):
+                partial_dervatives_i[i][0] = vector[0]/la.norm(vector)
+                partial_dervatives_i[i][1] = vector[1]/la.norm(vector)
+
 
             # calculate new cell positions
+            # negative sign is here cause I mixed up my delta direction
+            cell_pos = -self.delta*partial_dervatives_i + cell_pos
 
             # compute V.D of points
 
+            vor = Voronoi(cell_pos)
+
+
             # compare objective functions
 
+
+            old = O  
+            O = self.objective_function_distances(V,E,CH_points,CH_segments,vor)
+
+            #lis.append(np.absolute(np.sum(np.apply_along_axis(la.linalg.norm,1,old)) - np.sum(np.apply_along_axis(la.linalg.norm,1,O))))
+
+            if np.absolute(np.sum(np.apply_along_axis(la.linalg.norm,1,old)) - np.sum(np.apply_along_axis(la.linalg.norm,1,O))) < self.threshold:
+                break
+
+
         # return voronoi Cell Locations
+
         
 
         pass
@@ -353,8 +382,75 @@ class KMeans:
         return centroids_iter[np.argmin(np.sum(measure_iter,axis=1))]
 
 
+            #original math proof from :
+            #https://stackoverflow.com/questions/563198/how-do-you-detect-where-two-line-segments-intersect/565282#565282
+            #
+            #take the idea of line segment intersection
+            # q+ s   p + r
+            # \    /
+            #  \  /
+            #   \/
+            #   /\
+            #  /  \
+            # /    \
+            # p     q
+            #
+            # p + t*r = q + u*s ; where t and u are scalars
+            # (p + t*r)xs = (q + u*s)xs
+            # pxs + t*rxs = qxs + 0
+            # t*rxs = qxs - pxs
+            # t = [(q-p)xs]/rxs
+            # if t is negaive, then we went left of p, thus did not intersect
+            # if |p + tr - p| > |p + r - p| then we have gone past our endpoint c2
+ 
+def ray_intersection_point(p,r,q,s):
 
+    cross = np.cross(r,s) 
+
+    if cross == 0:
+        return None
+
+    t = np.cross((q-p),s)/cross
+    u = np.cross((q-p),r)/cross
+
+    if 0 <= t and t <= 1 and u >= 0 and np.cross(r,s) != 0:
+        # intersection point with outer border, if it exists
+        return p + t*r
+    return None
         
+# p1 : point left of endpoint
+# p2 : point right of endpoint
+# centroid : intiror point of the convex set
+# segment : segment we may be intersecting with
+def voronoi_endpoint_intersection(p1,p2,centroid,segment):
+            
+            p1 = np.array(p1)
+            p2 = np.array(p2)
+            centroid = np.array(centroid)
+            segment = np.array(segment)
+
+            #rotation matrix 90 deg
+            rot = np.array([[0,-1],[1,0]])
+
+            #bisector
+            q = (p1 + p2)/2
+            s = (p1-p2)@rot
+
+            t1 = np.sign(np.linalg.det(np.hstack((np.array(([p1,p2,q+s])),np.ones((3,1))))))
+            t2 = np.sign(np.linalg.det(np.hstack((np.array(([p1,p2,centroid])),np.ones((3,1))))))
+            
+            # make sure the the edge is pointing outwards from the convex hull
+            if t1 == t2:
+                s = -s
+
+            c1 = segment[0]
+            c2 = segment[1]
+
+            p = c1
+            r = c2 - c1
+            i = ray_intersection_point(p,r,q,s)
+
+            return i
 
 def to_points(pre_data):
     tmp_x = []
