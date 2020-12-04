@@ -1,5 +1,7 @@
 import re
 import random
+import time
+import csv
 
 import itertools as it
 
@@ -9,13 +11,17 @@ from numpy import linalg as la
 from pprint import pprint
 
 from sklearn.neighbors import NearestNeighbors
+from sklearn.cluster import KMeans as sk_KMeans
 from scipy.spatial import Voronoi
+from scipy.spatial import ConvexHull
+
+from shapely.geometry import Point, Polygon
 
 
 from dijkstar import Graph, find_path
 
 KML_ROAD_FILE = "./data/Road_Centrelines.kml"
-DOT_FILE = "./data/test.dot"
+DOT_FILE = "./data/test0.dot"
 
 
 def main():
@@ -36,16 +42,143 @@ def main():
     test_set()
 
 def test_set():
-    print("Extracting data from : ",DOT_FILE)
-    vertex_set, edge_set = dot_extract()
-    model = KMeans()
-    print(model.fit(vertex_set,edge_set))
+    
 
-    model_2 = VoronoiFacilitySelection()
-    print(model_2.fit(vertex_set,edge_set))
 
-def dot_extract(norm=np.linalg.norm):
-    with open(DOT_FILE,'rt',encoding='utf-8') as f:
+    data = {}
+    timer = Timer()
+
+    for test in range(3,6):
+        path = './data/test'+str(test)+'.dot'
+        print("Extracting data from : ",path)
+        vertex_set, edge_set = dot_extract(path=path)
+        print("Number Of Items : ",len(vertex_set.values()))
+
+        for n_clusters in [3,5]:
+            print("NEW CLUSTER SIZE",n_clusters)
+            for seed in range(10):
+                print("CLUSTER SIZE",n_clusters,"Iteration : ",seed)
+                print("Model 1")
+                model_1 = KMeans(random_state=seed,n_clusters=n_clusters,n_init=10,max_iter=300)
+                timer.start()
+                k_1 = model_1.fit(vertex_set,edge_set)
+                timer.stop()
+                c_1_dist = evaluate_model(vertex_set,edge_set,k_1)
+                l_1_1_norm = np.sum(c_1_dist)
+                print("verticies Chosen")
+                print(k_1)
+                print("centroid distance")
+                print(c_1_dist)
+                print("l1 norm")
+                print(l_1_1_norm)
+                print("time")
+                print(timer.get_time())
+
+                name = "Model_1_test"+str(test) + "_" + "f_" + str(n_clusters)+"_"
+                data[name+"dist"] = data.get(name+"dist",[])+ c_1_dist.tolist()
+                data[name+"l1"] = data.get(name+"l1",[]) + [l_1_1_norm]
+                data[name+"t"] = data.get(name+"t",[]) + [timer.get_time()]
+
+                print("Model 2")
+                model_2 = VoronoiFacilitySelection(random_state=seed,max_iter=300,n_cells=n_clusters)
+                timer.start()
+                k_2 = model_2.fit(vertex_set,edge_set)
+                timer.stop()
+                c_2_dist = evaluate_model(vertex_set,edge_set,k_2)
+                l_1_2_norm = np.sum(c_2_dist)
+                print("verticies Chosen")
+                print(k_2)
+                print("centroid distance")
+                print(c_2_dist)
+                print("l1 norm")
+                print(l_1_2_norm)
+                print("time")
+                print(timer.get_time())
+
+                name = "Model_2_test"+str(test) + "_" + "f_" + str(n_clusters)+"_"
+                data[name+"dist"] = data.get(name+"dist",[])+ c_2_dist.tolist()
+                data[name+"l1"] = data.get(name+"l1",[]) + [l_1_2_norm]
+                data[name+"t"] = data.get(name+"t",[]) + [timer.get_time()]
+                
+                print("Model 3")
+                timer.start()
+                model_3 = sk_KMeans(random_state=seed,n_clusters=n_clusters).fit(list(vertex_set.values()))
+                timer.stop()
+                NN = NearestNeighbors(n_neighbors=1, radius=0.0000000000001).fit(np.array(list(vertex_set.values()))) 
+                Y = NN.kneighbors(model_3.cluster_centers_,1,return_distance=False)
+                k_3 = [list(vertex_set.keys())[i[0]] for i in Y]
+                c_3_dist = evaluate_model(vertex_set,edge_set,k_3)
+                l_1_3_norm = np.sum(c_3_dist)
+                print("verticies Chosen")
+                print(k_3)
+                print("centroid distance")
+                print(c_3_dist)
+                print("l1 norm")
+                print(l_1_3_norm)
+                print("time")
+                print(timer.get_time())
+
+                name = "Model_3_test"+str(test) + "_" + "f_" + str(n_clusters)+"_"
+                data[name+"dist"] = data.get(name+"dist",[])+ c_3_dist.tolist()
+                data[name+"l1"] = data.get(name+"l1",[]) + [l_1_3_norm]
+                data[name+"t"] = data.get(name+"t",[]) + [timer.get_time()]
+
+    #pprint(data)
+    print("Writing to csv")
+    for key, item in data.items():
+        with open('data/'+key+'.csv','w+',newline='') as csvfile:
+                writer = csv.writer(csvfile,delimiter=',')
+                writer.writerow([key])
+                for d in item:
+                    writer.writerow([d])
+
+class Timer():
+    def __init__(self):
+        self.time_start = None
+        self.time_stop = None
+
+    def start(self):
+        self.time_stop = None
+        self.time_start = time.time()
+        return None
+
+    def stop(self):
+        self.time_stop = time.time()
+        return self.time_stop - self.time_start
+
+    def get_time(self):
+        return self.time_stop - self.time_start
+
+        
+
+
+# V : verticies
+# E : edges
+# k : facilitie nodes
+def evaluate_model(V,E,k):
+    measure_i = np.zeros(len(k))
+    graph = adj_list_to_graph(E)
+
+    measure_k = np.zeros(len(k))
+
+    for v in list(V.keys()):
+        minimum_cost = float('inf')
+        minimum_c_index = 0
+
+        for index, facility in zip(range(len(k)),k):
+            cost = find_path(graph,v,facility).total_cost
+            if cost < minimum_cost:
+                minimum_cost = cost
+                minimum_c_index = index
+
+
+        measure_k[minimum_c_index] = measure_k[minimum_c_index] + minimum_cost
+
+    return measure_k
+
+
+def dot_extract(path=DOT_FILE,norm=np.linalg.norm):
+    with open(path,'rt',encoding='utf-8') as f:
         vertex = re.compile("\w+\s\[pos=\"\d+,\d+\"\];")
         edge = re.compile("\w+\s--\s\w+;")
         
@@ -90,10 +223,6 @@ class VoronoiFacilitySelection:
         self.max_iter = max_iter
         self.n_cells = n_cells
         self.delta = delta
-
-    # Voronoi Construction On 2 Points
-    def Voronoi_2_points(self):
-        pass
 
     # the largest circle inside a voronoi cell 
     def objective_function_distances(self,V,E,CH_points,CH_segments,vor):
@@ -166,6 +295,7 @@ class VoronoiFacilitySelection:
             p1 = vor.points[points_index[0]]
             p2 = vor.points[points_index[1]]
             
+            # TO-DO : Replace with subroutine voronoi_endpoint_intersection
             #bisector
             q = (p1 + p2)/2
             s = (p1-p2)@rot
@@ -230,23 +360,136 @@ class VoronoiFacilitySelection:
         # return distance, and distance vector associated with voronoi verticies indicies
         return distances
 
+    # depreicated
+    # -- you can use NN instead to find region belonging to point
+    def voronoi_regions_to_polygons(self,CH_points,CH_segments,vor):
+        #rotation matrix 90 deg
+        rot = np.array([[0,-1],[1,0]])
+
+
+        #compute centroid
+        hull = set()
+        for points , voronoi_ridge in vor.ridge_dict.items():
+            if voronoi_ridge[np.argmin(voronoi_ridge)] < 0:
+                hull.add(points[0])
+                hull.add(points[1])
+
+
+        hull = np.array([vor.points[i] for i in hull])
+        centroid = np.sum(hull,axis=0)/hull.shape[0]
+
+
+        # map voronoi point index to points indicies between edge 
+        map_vertex_points = {}
+        for points_index, voronoi_ridge in vor.ridge_dict.items():
+
+            if voronoi_ridge[np.argmin(voronoi_ridge)] >= 0:
+                continue
+            p0 = vor.vertices[voronoi_ridge[np.argmax(voronoi_ridge)]]
+            map_vertex_points[voronoi_ridge[np.argmax(voronoi_ridge)]] = list(points_index)
+
+
+
+
+
+        
+
+
+
+        region = []
+
+        print("region adding")
+        for region_index, vor_verticies in zip(range(len(vor.regions)),vor.regions):
+            print(vor_verticies)
+            points = [vor.vertices[v].tolist() for v in vor_verticies if v >= 0]
+            if len(points) == 0:
+                region.append([])
+                continue
+            if not -1 in vor_verticies:
+                region.append(points)
+                continue
+                
+            
+
+            
+            end_points = [v for v in vor_verticies if not map_vertex_points.get(v,None) is None]
+            for end_point in end_points:
+                p1 = vor.points[map_vertex_points[end_point][0]] # points forming bisector
+                p2 = vor.points[map_vertex_points[end_point][1]] # points forming bisector
+            
+                centroid = centroid # point inside convex polygon
+                CH_segments = CH_segments # intersecting segments
+                
+                
+                
+                for edge in CH_segments:
+                    i = voronoi_endpoint_intersection(p1,p2,centroid,edge)
+                    if i is None:
+                        continue
+                    if not i.tolist() in points:
+                        points.append(i.tolist())
+            
+            
+            neigh = NearestNeighbors(n_neighbors=1, radius=0.0000000000001) 
+            neigh.fit(vor.points)
+            Y = neigh.kneighbors(CH_points,1,return_distance=False)
+            
+            for point_index,point_i in zip(range(len(Y)),Y):
+                if region_index == vor.point_region[point_i[0]]:
+                    points.append(vor.points[point_i[0]].tolist())
+            
+            region.append(points)
+            
+            
+
+            
+        # convert to convex hull, and find a ordering or verticies to form polygon
+        #----------------
+        polygons = list()
+        print("regions")
+        for r in region:
+            pprint(r)
+        print("END")
+
+
+        # note : if the C.H is 0, 2, points, then there is zero area thus no intersection
+        for s in region:
+            z = list()
+            if len(s) == 0:
+                #polygons.append(s)
+                continue
+            if len(s) >= 3:
+                h = ConvexHull(s)
+                z = Polygon([h.points[h.vertices[i-1]] for i in range(h.vertices.shape[0]+1)])
+            polygons.append(z)
+
+        return polygons
+
+    def density_region(self,V,vor):
+        density = np.zeros(len(vor.points))
+
+        neigh = NearestNeighbors(n_neighbors=1, radius=0.0000000000001) 
+        neigh.fit(vor.points)
+
+        Y = neigh.kneighbors(list(V.values()),1,return_distance=False) 
+
+        for point_index in Y:
+            density[point_index[0]] = density[point_index[0]] + 1
+
+        return density
+
+
+
+
+
+            
+
+
+
     def fit(self,V,E,density=None):
-        print("Fit")
+        #print("Fit")
 
         random.seed(self.random_state)
-
-        # pick random points
-        centroids = random.choices(list(V.keys()),k=self.n_cells)
-
-        print(centroids)
-
-        cell_pos = np.array([V[centroid] for centroid in centroids])
-
-        print(cell_pos)
-
-        # compute V.D of points
-        vor = Voronoi(cell_pos)
-
 
         # this section will be pre-processing
         min_x = min(np.array(list(V.values()))[:,0])
@@ -261,11 +504,25 @@ class VoronoiFacilitySelection:
         CH_points = np.array([min_bound,[max_bound[0],min_bound[1]],max_bound,[min_bound[0],max_bound[1]]])
         CH_segments = np.array([[CH_points[i-1],CH_points[i]] for i in range(len(CH_points))])
 
+        # pick random points
+        #centroids = random.choices(list(V.keys()),k=self.n_cells)
 
+        #print(centroids)
+
+        cell_pos = np.array([[random.randrange(min_x,max_x),random.randrange(min_y,max_y)] for _ in range(self.n_cells)])
+
+        #print(cell_pos)
+
+        # compute V.D of points
+        vor = Voronoi(cell_pos)
+
+        #print("CH SEG")
+        #print(CH_segments)
 
         # compute Objective Function
 
         O = self.objective_function_distances(V,E,CH_points,CH_segments,vor)
+        density = self.density_region(V,vor)
 
 
 
@@ -282,13 +539,13 @@ class VoronoiFacilitySelection:
             partial_dervatives_i = np.zeros(vor.points.shape)
 
             for i,vector in zip(range(O.shape[0]),O):
-                partial_dervatives_i[i][0] = vector[0]/la.norm(vector)
-                partial_dervatives_i[i][1] = vector[1]/la.norm(vector)
+                partial_dervatives_i[i][0] = density[i]*vector[0]/la.norm(vector)
+                partial_dervatives_i[i][1] = density[i]*vector[1]/la.norm(vector)
 
 
             # calculate new cell positions
             # negative sign is here cause I mixed up my delta direction
-            cell_pos = -self.delta*partial_dervatives_i + cell_pos
+            cell_pos = self.delta*partial_dervatives_i + cell_pos
 
             # compute V.D of points
 
@@ -300,22 +557,32 @@ class VoronoiFacilitySelection:
 
             old = O  
             O = self.objective_function_distances(V,E,CH_points,CH_segments,vor)
+            density = self.density_region(V,vor)
+
 
             #lis.append(np.absolute(np.sum(np.apply_along_axis(la.linalg.norm,1,old)) - np.sum(np.apply_along_axis(la.linalg.norm,1,O))))
+            #lis.append(la.norm(O))
 
             if np.absolute(np.sum(np.apply_along_axis(la.linalg.norm,1,old)) - np.sum(np.apply_along_axis(la.linalg.norm,1,O))) < self.threshold:
                 break
 
 
         # return voronoi Cell Locations
+        #pprint(lis)
 
         
+        neigh = NearestNeighbors(n_neighbors=1, radius=0.0000000000001) 
+        neigh.fit(list(V.values()))
 
-        pass
+        Y = neigh.kneighbors(vor.points,1,return_distance=False) 
+
+        r = [list(V.keys())[i[0]] for i in Y]
+
+        return r
 
 
 class KMeans:
-    def __init__(self,n_clusters=2, random_state=0,n_init=10,max_iter=300):
+    def __init__(self,n_clusters=3, random_state=0,n_init=10,max_iter=300):
         self.n_clusters = n_clusters
         self.random_state = random_state
         self.n_init = n_init
@@ -325,6 +592,8 @@ class KMeans:
     # V : Vertex Set -> Pos : [x,y]
     # E : Edge Set -> Weights : float
     def fit(self,V,E):
+        random.seed(self.random_state)
+
         # clamp two random verticies as centers
         centroids_iter = []
         measure_iter = []
@@ -338,13 +607,15 @@ class KMeans:
 
         # number of iterations
         for iteration in range(self.n_init):
+            #print("completiongs",iteration)
             centroids = random.choices(list(V.keys()),k=self.n_clusters)
             measure_i = np.zeros(self.n_clusters)
 
 
 
             # computing clusters 
-            for _ in range(self.max_iter):
+            for i in range(self.max_iter):
+                #print(i) 
                 centroid_pos = np.zeros((self.n_clusters,2))
                 centroid_count = np.zeros(self.n_clusters)
                 measure_k = np.zeros(self.n_clusters)
@@ -366,6 +637,7 @@ class KMeans:
 
                 centroid_count = np.array([1 if a == 0 else a for a in centroid_count])
                 centroid_pos = centroid_pos/centroid_count[:,np.newaxis]
+
                 Y = neigh.kneighbors(centroid_pos,1,return_distance=False)
 
                 centroids = [verticies_pos[i[0]] for i in Y]
@@ -376,6 +648,7 @@ class KMeans:
                     break
                 measure_i = measure_k
                 
+
             measure_iter.append(measure_i)
             centroids_iter.append(centroids)
 
@@ -435,6 +708,7 @@ def voronoi_endpoint_intersection(p1,p2,centroid,segment):
             #bisector
             q = (p1 + p2)/2
             s = (p1-p2)@rot
+
 
             t1 = np.sign(np.linalg.det(np.hstack((np.array(([p1,p2,q+s])),np.ones((3,1))))))
             t2 = np.sign(np.linalg.det(np.hstack((np.array(([p1,p2,centroid])),np.ones((3,1))))))
