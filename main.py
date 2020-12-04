@@ -48,7 +48,7 @@ def test_set():
     data = {}
     timer = Timer()
 
-    for test in range(3,6):
+    for test in range(0,1):
         path = './data/test'+str(test)+'.dot'
         print("Extracting data from : ",path)
         vertex_set, edge_set = dot_extract(path=path)
@@ -217,12 +217,13 @@ def adj_list_to_graph(E):
     return graph
 
 class VoronoiFacilitySelection:
-    def __init__(self,random_state=42,threshold=0.01,max_iter=300,n_cells=3,delta=0.1):
+    def __init__(self,random_state=42,threshold=0.01,max_iter=300,n_cells=3,delta=0.1,ret_dia=False):
         self.random_state = random_state
         self.threshold = threshold
         self.max_iter = max_iter
         self.n_cells = n_cells
         self.delta = delta
+        self.ret_dia=ret_dia
 
     # the largest circle inside a voronoi cell 
     def objective_function_distances(self,V,E,CH_points,CH_segments,vor):
@@ -400,6 +401,9 @@ class VoronoiFacilitySelection:
 
         print("region adding")
         for region_index, vor_verticies in zip(range(len(vor.regions)),vor.regions):
+
+
+
             print(vor_verticies)
             points = [vor.vertices[v].tolist() for v in vor_verticies if v >= 0]
             if len(points) == 0:
@@ -515,6 +519,7 @@ class VoronoiFacilitySelection:
 
         # compute V.D of points
         vor = Voronoi(cell_pos)
+        list_vor = []
 
         #print("CH SEG")
         #print(CH_segments)
@@ -532,6 +537,8 @@ class VoronoiFacilitySelection:
 
         # loop
         for i in range(self.max_iter):
+            if self.ret_dia:
+                list_vor.append(vor)
 
             # Calculate density of cells
 
@@ -578,15 +585,18 @@ class VoronoiFacilitySelection:
 
         r = [list(V.keys())[i[0]] for i in Y]
 
+        if self.ret_dia:
+            return r , list_vor
         return r
 
 
 class KMeans:
-    def __init__(self,n_clusters=3, random_state=0,n_init=10,max_iter=300):
+    def __init__(self,n_clusters=3, random_state=0,n_init=10,max_iter=300,ret_dia=False):
         self.n_clusters = n_clusters
         self.random_state = random_state
         self.n_init = n_init
         self.max_iter = max_iter
+        self.ret_dia = ret_dia
 
     # compute k-means, and find clusters
     # V : Vertex Set -> Pos : [x,y]
@@ -594,6 +604,8 @@ class KMeans:
     def fit(self,V,E):
         random.seed(self.random_state)
 
+        list_dia_i = []
+        list_dia = []
         # clamp two random verticies as centers
         centroids_iter = []
         measure_iter = []
@@ -642,6 +654,9 @@ class KMeans:
 
                 centroids = [verticies_pos[i[0]] for i in Y]
                 
+                if self.ret_dia:
+                    list_dia_i.append(centroids)
+
                 # if there is next to no change from previous iteration
                 if la.norm(measure_i-measure_k) < 1.0:
                     measure_i = measure_k
@@ -651,6 +666,12 @@ class KMeans:
 
             measure_iter.append(measure_i)
             centroids_iter.append(centroids)
+            if self.ret_dia:
+                list_dia.append(list_dia_i)
+                list_dia_i = []
+
+        if self.ret_dia:
+            return centroids_iter[np.argmin(np.sum(measure_iter,axis=1))], list_dia[np.argmin(np.sum(measure_iter,axis=1))]
 
         return centroids_iter[np.argmin(np.sum(measure_iter,axis=1))]
 
